@@ -1,6 +1,6 @@
 package vn.evolus.model;
 
-public class Car {
+public class Car extends BaseModel {
 
     private int id;
 

@@ -9,9 +9,15 @@ import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import vn.evolus.model.BaseModel;
 import vn.evolus.model.Car;
+import vn.evolus.util.CarUtils;
 
+import java.beans.IntrospectionException;
+import java.beans.Introspector;
+import java.beans.PropertyDescriptor;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +36,7 @@ public class ObjectMapperCustomizer {
         ObjectMapper mapper = new ObjectMapper();
         SimpleModule module = new SimpleModule();
         module.addSerializer(List.class, new ListJsonSerializer());
-        module.addSerializer(Object.class, new ObjectJsonSerializer());
+        module.addSerializer(BaseModel.class, new BaseModelJsonSerializer());
 
         mapper.registerModule(module);
         mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
@@ -56,29 +62,43 @@ public class ObjectMapperCustomizer {
         }
     }
 
-    private static class ObjectJsonSerializer extends StdSerializer<Object> {
+    private static class BaseModelJsonSerializer extends StdSerializer<Object> {
 
-        protected ObjectJsonSerializer() {
+        protected BaseModelJsonSerializer() {
             super(Object.class);
         }
 
         @Override
-        public void serialize(Object value, JsonGenerator gen, SerializerProvider provider) throws IOException {
+        public void serialize(Object model, JsonGenerator gen, SerializerProvider provider) throws IOException {
             gen.writeStartObject();
-
+            try {
+                PropertyDescriptor[] propertyDescriptors = Introspector.getBeanInfo(model.getClass()).getPropertyDescriptors();
+                for (PropertyDescriptor propertyDescriptor : propertyDescriptors) {
+                    Object value = propertyDescriptor.getReadMethod().invoke(model);
+                    gen.writeObjectField(propertyDescriptor.getName(), value);
+                }
+                IJsonProcessor jsonProcessor = JSON_PROCESSOR.get(model.getClass());
+                if (jsonProcessor != null) {
+                    jsonProcessor.process(model, gen);
+                }
+            } catch (IntrospectionException | IllegalAccessException | InvocationTargetException e) {
+                e.printStackTrace();
+                throw new RuntimeException(e);
+            }
             gen.writeEndObject();
         }
     }
 
     private interface IJsonProcessor {
-        void process();
+        void process(Object model, JsonGenerator generator) throws IOException;
     }
 
     private static class CarJsonProcessor implements IJsonProcessor {
 
         @Override
-        public void process() {
-
+        public void process(Object model, JsonGenerator generator) throws IOException {
+            Car car = (Car) model;
+            generator.writeObjectField("color", CarUtils.generateCarColorFromCar(car));
         }
     }
 }
